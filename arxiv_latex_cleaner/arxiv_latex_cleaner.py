@@ -361,11 +361,30 @@ def _simplify_conditional_blocks(text, if_exceptions=[]):
     traverse_tree(tree)
 
   for start, end in reversed(positions_to_delete):
-    if end < len(text) and text[end].isspace():
-      end_to_del = end + 1
+    # Check if a blank line would be created by this deletion.
+    # TeX interprets blank lines specially, so we avoid these.
+    prev_newline_idx = text.rfind('\n', 0, start)
+    line_start_idx = prev_newline_idx + 1
+    deletion_starts_new_line = text[line_start_idx : start].isspace() or len(text[line_start_idx : start]) == 0
+    next_newline_idx = text.find('\n', end)
+    line_end_idx = next_newline_idx + 1 if next_newline_idx > -1 else len(text)
+    deletion_ends_new_line = text[end:next_newline_idx].isspace() or len(text[end:next_newline_idx]) == 0
+    if deletion_starts_new_line and deletion_ends_new_line:
+      start_to_del = line_start_idx
+      end_to_del = line_end_idx
     else:
+      start_to_del = start
       end_to_del = end
-    text = text[:start] + text[end_to_del:]
+      # We sometimes have to remove trailing whitespace.
+      # Example: `ab\iftrue cd\fi ef` produces `abcdef`.
+      # We should not remove trailing whitespace, if there is a command in front of
+      # the deletion, e.g. `\test\iftrue ab\fi` should produce `\test ab`, not `\testab`.
+      command_in_front = (regex.search(r'\\[a-zA-Z]*\Z', text[:start]) != None)
+      if not command_in_front:
+        while len(text) > end_to_del and text[end_to_del] in ["\t", " "]:
+          end_to_del += 1
+
+    text = text[:start_to_del] + text[end_to_del:]
 
   return text
 
