@@ -511,6 +511,21 @@ class UnitTests(parameterized.TestCase):
           'text_in': '\\iftrue\\iff\\else\\fi',
           'true_output': '\\iff',
       },
+      {
+            'testcase_name': 'inline conditional block with and without command',
+            'text_in': 'Inline block\\quad\\iftrue with \\fi and \\iftrue without \\fi command in front.',
+            'true_output': 'Inline block\\quad with and without command in front.'
+      },
+      {
+            'testcase_name': 'does not create new blank lines',
+            'text_in': '\\iffalse hidden \\fi\n',
+            'true_output': ''
+      },
+      {
+            'testcase_name': 'does not remove existing blank lines',
+            'text_in': '\\iffalse hidden \\fi\n\n',
+            'true_output': '\n'
+      }
   )
   def test_simplify_conditional_blocks(self, text_in, true_output):
     self.assertEqual(
