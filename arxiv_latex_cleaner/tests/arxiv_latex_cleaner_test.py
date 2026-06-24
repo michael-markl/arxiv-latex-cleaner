@@ -290,8 +290,13 @@ class UnitTests(parameterized.TestCase):
       },
       {
           'testcase_name': 'percent',
-          'line_in': r'100\% accurate\n',
-          'true_output': r'100\% accurate\n',
+          'line_in': r'100\% accurate' + '\n',
+          'true_output': r'100\% accurate' + '\n',
+      },
+      {
+          'testcase_name': 'breakline_with_comment',
+          'line_in': r'\\% comment' + '\n',
+          'true_output': r'\\%' + '\n',
       },
       {
           'testcase_name': 'comment',
