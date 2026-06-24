@@ -376,7 +376,7 @@ def _remove_comments_inline(text):
   if regex.search(auto_ignore_pattern, text):
     return regex.sub(auto_ignore_pattern, r'\1', text)
 
-  if text.lstrip(' ').lstrip('\t').startswith('%'):
+  if text.lstrip().startswith('%'):
     return ''
 
   url_pattern = r'\\url\{(?>[^{}]|(?R))*\}'
