@@ -304,6 +304,11 @@ class UnitTests(parameterized.TestCase):
           'true_output': 'Foo %\n',
       },
       {
+          'testcase_name': 'comment_inline_with_tab_and_space',
+          'line_in': '\t %Y\n',
+          'true_output': '',
+      },
+      {
           'testcase_name': 'url_with_percent',
           'line_in': '\\url{https://www.example.com/hello%20world}\n',
           'true_output': '\\url{https://www.example.com/hello%20world}\n',
