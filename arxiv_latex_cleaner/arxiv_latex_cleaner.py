@@ -16,12 +16,15 @@
 import collections
 import contextlib
 import copy
+import dataclasses
+import enum
 import logging
 import os
 import pathlib
 import shutil
 import subprocess
 import tempfile
+import typing
 
 from PIL import Image
 import regex
@@ -188,7 +191,36 @@ def _simplify_conditional_blocks(text, if_exceptions=[]):
   to stderr and return the original text.
   """
   p = regex.compile(r'(?!(?<=\\newif\s*))\\if([a-zA-Z]*)|\\else(?![a-zA-Z])|\\fi(?![a-zA-Z])')
-  toplevel_tree = {'left': [], 'right': [], 'kind': 'toplevel', 'parent': None}
+
+
+  @dataclasses.dataclass
+  class TokenRange:
+    start: int
+    end: int
+    gobble_trailing_space: bool = True
+
+    def extend_to(self, other: 'TokenRange') -> 'TokenRange':
+      assert self.end <= other.start
+      return TokenRange(self.start, other.end, other.gobble_trailing_space)
+
+  class NodeKind(enum.Enum):
+    TOPLEVEL = 'toplevel'
+    IFFALSE = 'iffalse'
+    IFTRUE = 'iftrue'
+    UNKNOWN = 'unknown'
+
+  @dataclasses.dataclass
+  class ConditionNode:
+    kind: NodeKind
+    left: typing.List['ConditionNode'] = dataclasses.field(default_factory=list)
+    right: typing.List['ConditionNode'] = dataclasses.field(default_factory=list)
+    parent: typing.Optional['ConditionNode'] = None
+    start: typing.Optional[TokenRange] = None # Deprecated: use if_token instead
+    if_token: typing.Optional[TokenRange] = None
+    else_token: typing.Optional[TokenRange] = None
+    fi_token: typing.Optional[TokenRange] = None
+
+  toplevel_tree = ConditionNode(kind=NodeKind.TOPLEVEL)
 
   tree = toplevel_tree
 
@@ -252,26 +284,26 @@ def _simplify_conditional_blocks(text, if_exceptions=[]):
   ] + if_exceptions
 
   def new_subtree(kind):
-    return {'kind': kind, 'left': [], 'right': []}
+    return ConditionNode(kind=kind)
 
   def add_subtree(tree, subtree):
-    if 'else' not in tree:
-      tree['left'].append(subtree)
+    if tree.else_token is None:
+      tree.left.append(subtree)
     else:
-      tree['right'].append(subtree)
-    subtree['parent'] = tree
+      tree.right.append(subtree)
+    subtree.parent = tree
 
   def print_tree(tree, indent, write):
-    if 'start' in tree:
-      write(' ' * indent + tree['start'].group() + '\n')
-    for subtree in tree['left']:
+    if tree.if_token is not None:
+      write(' ' * indent + text[tree.if_token.start : tree.if_token.end] + '\n')
+    for subtree in tree.left:
       print_tree(subtree, indent + 2, write)
-    if 'else' in tree:
-      write(' ' * indent + tree['else'].group() + '\n')
-    for subtree in tree['right']:
-      print_tree(subtree, indent + 2)
-    if 'end' in tree:
-      write(' ' * indent + tree['end'].group() + '\n')
+    if tree.else_token is not None:
+      write(' ' * indent + text[tree.else_token.start : tree.else_token.end] + '\n')
+    for subtree in tree.right:
+      print_tree(subtree, indent + 2, write)
+    if tree.fi_token is not None:
+      write(' ' * indent + text[tree.fi_token.start : tree.fi_token.end] + '\n')
 
   def print_abort(error_finding):
     os.sys.stderr.write(
@@ -291,92 +323,90 @@ def _simplify_conditional_blocks(text, if_exceptions=[]):
     match = m.group()
 
     if match == r'\iffalse':
-      subtree = new_subtree('iffalse')
-      subtree['start'] = (m.start(), m.end())
+      subtree = new_subtree(NodeKind.IFFALSE)
+      subtree.if_token = TokenRange(m.start(), m.end())
       add_subtree(tree, subtree)
       tree = subtree
     elif match == r'\iftrue':
-      subtree = new_subtree('iftrue')
-      subtree['start'] = (m.start(), m.end())
+      subtree = new_subtree(NodeKind.IFTRUE)
+      subtree.if_token = TokenRange(m.start(), m.end())
       add_subtree(tree, subtree)
       tree = subtree
     elif match == r'\if':
       tokens = regex.match(r'^\s*([a-zA-Z0-9])([a-zA-Z0-9 \n])', text[m.end():])
       if tokens:
-        subtree = new_subtree('iftrue' if tokens.group(1) == tokens.group(2) else 'iffalse')
-        subtree['start'] = (m.start(), m.end() + tokens.end(), False)
+        subtree = new_subtree(NodeKind.IFTRUE if tokens.group(1) == tokens.group(2) else NodeKind.IFFALSE)
+        subtree.if_token = TokenRange(m.start(), m.end() + tokens.end(), False)
       else:
-        subtree = new_subtree('unknown')
-        subtree['start'] = (m.start(), m.end())
+        subtree = new_subtree(NodeKind.UNKNOWN)
+        subtree.if_token = TokenRange(m.start(), m.end())
       add_subtree(tree, subtree)
       tree = subtree
     elif match.startswith(r'\if'):
       if match[1:] in exceptions:
         continue
-      subtree = new_subtree('unknown')
-      subtree['start'] = (m.start(), m.end())
+      subtree = new_subtree(NodeKind.UNKNOWN)
+      subtree.if_token = TokenRange(m.start(), m.end())
       add_subtree(tree, subtree)
       tree = subtree
     elif match == r'\else':
-      if tree['parent'] is None:
+      if tree.parent is None:
         print_abort(r'unmatched \else')
         return text
-      elif 'else' in tree:
+      elif tree.else_token is not None:
         print_abort(r'duplicate \else')
         return text
 
-      tree['else'] = (m.start(), m.end())
+      tree.else_token = TokenRange(m.start(), m.end())
     elif m.group() == r'\fi':
-      if tree['parent'] is None:
+      if tree.parent is None:
         print_abort(r'unmatched \fi')
         return text
 
-      tree['end'] = (m.start(), m.end())
-      tree = tree['parent']
+      tree.fi_token = TokenRange(m.start(), m.end())
+      tree = tree.parent
     else:
       raise RuntimeError('Unreachable!')
 
-  if tree['parent'] is not None:
-    print_abort('unmatched ' + tree['start'].group())
+  if tree.parent is not None:
+    print_abort('unmatched ' + text[tree.if_token.start : tree.if_token.end])
     return text
 
-  positions_to_delete = []
+  ranges_to_delete = []
 
-  def traverse_tree(tree):
-    if tree['kind'] == 'iffalse':
-      if 'else' in tree:
-        positions_to_delete.append((tree['start'][0], tree['else'][1]))
-        for subtree in tree['right']:
+  def traverse_tree(tree: ConditionNode):
+    if tree.kind == NodeKind.IFFALSE:
+      if tree.else_token is not None:
+        ranges_to_delete.append(tree.if_token.extend_to(tree.else_token))
+        for subtree in tree.right:
           traverse_tree(subtree)
-        positions_to_delete.append(tree['end'])
+        ranges_to_delete.append(tree.fi_token)
       else:
-        positions_to_delete.append((tree['start'][0], tree['end'][1]))
-    elif tree['kind'] == 'iftrue':
-      if 'else' in tree:
-        positions_to_delete.append(tree['start'])
-        for subtree in tree['left']:
+        ranges_to_delete.append(tree.if_token.extend_to(tree.fi_token))
+    elif tree.kind == NodeKind.IFTRUE:
+      if tree.else_token is not None:
+        ranges_to_delete.append(tree.if_token)
+        for subtree in tree.left:
           traverse_tree(subtree)
-        positions_to_delete.append((tree['else'][0], tree['end'][1]))
+        ranges_to_delete.append(tree.else_token.extend_to(tree.fi_token))
       else:
-        positions_to_delete.append(tree['start'])
-        positions_to_delete.append(tree['end'])
-    elif tree['kind'] == 'unknown':
-      for subtree in tree['left']:
+        ranges_to_delete.append(tree.if_token)
+        ranges_to_delete.append(tree.fi_token)
+    elif tree.kind == NodeKind.UNKNOWN:
+      for subtree in tree.left:
         traverse_tree(subtree)
-      for subtree in tree['right']:
+      for subtree in tree.right:
         traverse_tree(subtree)
     else:
       raise ValueError('Unreachable!')
 
-  for tree in toplevel_tree['left']:
+  for tree in toplevel_tree.left:
     traverse_tree(tree)
 
-  for entry in reversed(positions_to_delete):
-    gobble_trailing_space = True
-    if len(entry) == 3:
-      (start, end, gobble_trailing_space) = entry
-    else:
-      (start, end) = entry
+  for token_range in reversed(ranges_to_delete):
+    start = token_range.start
+    end = token_range.end
+    gobble_trailing_space = token_range.gobble_trailing_space
 
     # Check if a blank line would be created by this deletion.
     # TeX interprets blank lines specially, so we avoid these.
