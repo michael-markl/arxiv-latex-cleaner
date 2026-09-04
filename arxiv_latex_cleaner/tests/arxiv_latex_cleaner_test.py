@@ -457,6 +457,11 @@ class UnitTests(parameterized.TestCase):
           'true_output': '\\ifvar\n\\fi\n',
       },
       {
+          'testcase_name': 'if_removed_with_nested_iftrue',
+          'text_in': '\\iftrue\n\\iftrue Foo\n\\fi\n\\fi\n',
+          'true_output': 'Foo\n',
+      },
+      {
           'testcase_name': 'if_removed_eof',
           'text_in': '\\iffalse\nFoo\n\\fi',
           'true_output': '',
