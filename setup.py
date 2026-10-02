@@ -39,7 +39,7 @@ setup(
     license="Apache License, Version 2.0",
     author="Google Research Authors",
     author_email="jponttuset@gmail.com",
-    description="Cleans the LaTeX code of your paper to submit to arXiv.",
+    description="Soft-fork of https://github.com/google-research/arxiv-latex-cleaner. Cleans the LaTeX code of your paper to submit to arXiv.",
     long_description=long_description,
     long_description_content_type="text/markdown",
     entry_points={

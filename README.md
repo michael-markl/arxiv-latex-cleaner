@@ -1,3 +1,18 @@
+# ABOUT THIS REPO
+
+This repository is a soft fork of https://github.com/google-research/arxiv-latex-cleaner.
+
+It cherry-picks the following changes:
+
+* [PR 125](https://github.com/google-research/arxiv-latex-cleaner/pull/125): Improve white space handling for conditional blocks
+* [PR 126](https://github.com/google-research/arxiv-latex-cleaner/pull/126): Fix whitespace stripping when removing inline comments
+
+You can install this soft-fork with pipx by running:
+```bash
+pipx install git+https://github.com/michael-markl/arxiv-latex-cleaner
+```
+
+
 # `arxiv_latex_cleaner`
 
 This tool allows you to easily clean the LaTeX code of your paper to submit to

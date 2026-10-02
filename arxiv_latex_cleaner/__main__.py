@@ -31,6 +31,7 @@ from .arxiv_latex_cleaner import run_arxiv_cleaner
 PARSER = argparse.ArgumentParser(
     prog="arxiv_latex_cleaner@{0}".format(__version__),
     description=(
+        "Soft-fork of https://github.com/google-research/arxiv-latex-cleaner. "
         "Clean the LaTeX code of your paper to submit to arXiv. "
         "Check the README for more information on the use."
     ),
